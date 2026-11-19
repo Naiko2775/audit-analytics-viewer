@@ -1,5 +1,7 @@
 # Audit Analytics Viewer
 
+
+Production : https://audit-analytics-viewer.vercel.app (déploiement automatique à chaque push sur `main`).
 Restitution web des audits analytics JAKALA, à partir d'un `audit.json` (contrat **1.1**, specs fonctionnelles v0.2).
 Le build produit **un seul fichier HTML** (`dist/index.html`) : c'est à la fois l'application déployée et la base de l'artefact autonome envoyé au client (menu *Exporter › Artefact HTML autonome*).
 
