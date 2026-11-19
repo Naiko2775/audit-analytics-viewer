@@ -290,7 +290,8 @@
    "criticite": "MOYENNE",
    "commentaire": "Non vérifiable sans accès à la console Didomi.",
    "top_prio": false,
-   "outil_id": "didomi"
+   "outil_id": "didomi",
+   "motif_non_evalue": "technique"
   },
   {
    "id_grille": "GTM-24",
@@ -697,7 +698,7 @@
    "outil_id": "matomo"
   },
   {
-   "id_grille": "CMP-09",
+   "id_grille": "CMP-10",
    "pilier_id": "consentement",
    "domaine": "CMP",
    "outil": "Didomi",

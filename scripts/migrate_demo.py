@@ -21,6 +21,8 @@ d['outils'] = [
 for p in d['piliers']:
     p['outils'] = [{"Didomi": "didomi", "GTM": "gtm", "Matomo": "matomo"}[o] for o in p['outils']]
 d['piliers'][0]['outils'].append('google-ads')
+def normalize_inconnu(c):
+    return str(c.get('statut', '')).strip().upper() in ('INCONNU', 'UNKNOWN')
 oid = {"Didomi": "didomi", "GTM": "gtm", "Matomo": "matomo"}
 for c in d['criteres']:
     c['outil_id'] = oid.get(c['outil'])
@@ -31,7 +33,8 @@ d['acces_requis'] = [
 for c in d['criteres']:
     if c['id_grille'] == 'GTM-03': c.update(statut='INCONNU', motif_non_evalue='acces', acces_requis_id='ACC-01')
     if c['id_grille'] == 'MAT-08': c.update(motif_non_evalue='acces', acces_requis_id='ACC-02')
-d['criteres'].append({"id_grille": "CMP-09", "pilier_id": "consentement", "domaine": "CMP", "outil": "Didomi", "outil_id": "didomi", "category": "Architecture", "subject": "Configuration", "axe_score": "COMPLIANCE", "question": "L'intégration Consent Mode native est-elle activée dans la console ?", "element_controle": "Console Didomi", "statut": "INCONNU", "criticite": "MOYENNE", "commentaire": "Non vérifiable sans accès à la console.", "top_prio": False, "motif_non_evalue": "acces", "acces_requis_id": "ACC-03"})
+    if normalize_inconnu(c) and not c.get('motif_non_evalue'): c['motif_non_evalue'] = 'technique'
+d['criteres'].append({"id_grille": "CMP-10", "pilier_id": "consentement", "domaine": "CMP", "outil": "Didomi", "outil_id": "didomi", "category": "Architecture", "subject": "Configuration", "axe_score": "COMPLIANCE", "question": "L'intégration Consent Mode native est-elle activée dans la console ?", "element_controle": "Console Didomi", "statut": "INCONNU", "criticite": "MOYENNE", "commentaire": "Non vérifiable sans accès à la console.", "top_prio": False, "motif_non_evalue": "acces", "acces_requis_id": "ACC-03"})
 
 URL = "https://www.client-demo.fr/"
 def net(rows):
@@ -87,5 +90,10 @@ for c in d['constats']:
             p['gabarit'] = 'navigateur'; p['page'] = {"url": URL, "titre": "Accueil"}
             p['annotations'] = [{"num": 1, "statut": "KO", "cible": {"zone": {"x": 57, "y": 85, "w": 41, "h": 13}}, "texte": "Aucun bouton **Tout refuser** au premier niveau"},
                                 {"num": 2, "statut": "OK", "cible": {"zone": {"x": 2, "y": 66, "w": 50, "h": 20}}, "texte": "Bannière affichée **avant** tout dépôt de cookie"}]
+import re
+for c in d['constats']:
+    for p in c.get('preuves', []):
+        if p['id'] == 'P-03':  # repères désormais portés par les annotations, pas incrustés dans l'image
+            p['fichier'] = re.sub(r"<text x='620' y='336'.*?</text>", "", re.sub(r"<rect x='370'[^>]*/>", "", p['fichier']))
 json.dump(d, open('src/data/demo-audit.json', 'w'), ensure_ascii=False, indent=1)
 print('ok', len(d['criteres']), 'critères')

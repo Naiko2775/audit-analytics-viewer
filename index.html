@@ -14,7 +14,7 @@
   <nav class="sidebar" id="sidebar" aria-label="Sections"></nav>
   <main id="main" tabindex="-1"></main>
 </div>
-<input type="file" id="file" accept=".json,application/json" hidden>
+<input type="file" id="file" multiple accept=".json,.zip,.txt,application/json,application/zip,image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden>
 <!-- audit.json (contrat 1.1) injecté au build ; remplacé dans l'artefact exporté -->
 <script type="application/json" id="audit-data">%AUDIT_DATA%</script>
 <script type="module" src="/src/main.ts"></script>

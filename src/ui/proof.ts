@@ -22,7 +22,7 @@ function pageView(p: Preuve, anns: Annotation[]): string {
       return `<div class="azone a-${a.statut}" style="left:${z.x}%;top:${z.y}%;width:${z.w}%;height:${z.h}%">${mark(a)}</div>`;
     }).join('');
     const src = /^data:/.test(p.fichier) || /^https?:/.test(p.fichier) ? p.fichier : '';
-    return `<div class="br-shot">${src ? `<img src="${esc(src)}" alt="${esc(tx(p.legende))}">` : `<div class="ph">Capture : ${esc(p.fichier)}</div>`}${zones}</div>`;
+    return `<div class="br-shot"><div class="br-img">${src ? `<img src="${esc(src)}" alt="${esc(tx(p.legende))}">` : `<div class="ph">Capture : ${esc(p.fichier)}</div>`}${zones}</div></div>`;
   }
   if (!p.page) return '';
   const cmp = p.page.banniere_cmp ? `<div class="cmp"><b>Nous respectons votre vie privée</b>Nous utilisons des cookies…<div class="bt"><span>Personnaliser</span><span>Tout accepter</span></div></div>` : '';

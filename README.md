@@ -15,12 +15,37 @@ npm run build      # dist/index.html, single-file
 AUDIT_FILE=chemin/audit.json npm run build   # build avec un autre audit embarqué
 ```
 
+## Importer un audit
+
+Écran **Importer** (`#import`) : déposer les fichiers, lire le rapport de contrôle, puis générer la restitution.
+
+Formats acceptés :
+- une **archive `.zip`** produite par le skill : `audit.json` et un dossier `preuves/`. Le dossier racine éventuel est détecté automatiquement ;
+- un **`audit.json` seul**, si les preuves sont embarquées ou en texte ;
+- **plusieurs fichiers** déposés ensemble : le JSON et ses captures.
+
+Les preuves et les logos sont référencés par chemin relatif, par exemple `"fichier": "preuves/doubleclick_network.png"`. La résolution essaie successivement le chemin exact, le suffixe, puis le nom de fichier s'il est unique. Formats admis : PNG, JPG, WebP, GIF, SVG, texte.
+
+Les contrôles sont faits en une seule passe et regroupés par règle (`src/core/validate.ts`, constante `RULES`) :
+
+| Niveau | Exemples |
+|---|---|
+| **Erreur bloquante** | Syntaxe JSON (avec ligne et colonne), champ obligatoire manquant, identifiant dupliqué, statut ou criticité inconnu, pilier inconnu, `impact_score` hors 1 à 3, constat HAUTE sans preuve ni situation (§7.2), preuve absente sur un constat HAUTE, archive > 200 Mo |
+| **Avertissement** | Critère KO HAUTE non rattaché, titre > 80 caractères, bloc > 4 puces, effort incohérent avec le nombre de semaines, preuve absente (autres criticités), entrée de ZIP rejetée (`../`, format), budget de l'artefact dépassé |
+| **Information** | Fichier non référencé, images optimisées, logo d'outil manquant |
+
+La génération reste désactivée tant qu'il y a des erreurs bloquantes. S'il n'y a que des avertissements, elle demande une confirmation.
+
+À l'intégration, les images de plus de 1 920 px ou de plus de 400 Ko sont réduites et ré-encodées en WebP qualité 80 (décision D11). Les fichiers deviennent des `data:` URL : l'audit est alors autonome et l'artefact exporté fonctionne hors ligne.
+
+Tout le traitement se fait dans le navigateur : rien n'est envoyé sur un serveur. Les audits importés sont conservés dans IndexedDB et listés sur l'écran d'import, et le dernier ouvert est rechargé au démarrage.
+
 ## Structure
 
 | Dossier | Rôle |
 |---|---|
-| `src/core/` | Contrat (`types.ts`), règles et scores (`rules.ts`), moteur (`model.ts`), validation à l'import (`validate.ts`), libellés FR/EN (`i18n.ts`). Sans DOM, testé. |
-| `src/ui/` | Écrans S0 → S9 et S0b (`sections.ts`), preuves annotées (`proof.ts`), shell, présentation, exports et édition (`app.ts`). |
+| `src/core/` | Contrat (`types.ts`), règles et scores (`rules.ts`), moteur (`model.ts`), validation à l'import (`validate.ts`), archive et résolution des preuves (`evidence.ts`), libellés FR/EN (`i18n.ts`). Sans DOM, testé. |
+| `src/ui/` | Écrans S0 → S9 et S0b (`sections.ts`), preuves annotées (`proof.ts`), module d'import (`importer.ts`), stockage local (`storage.ts`), shell, présentation, exports et édition (`app.ts`). |
 | `src/data/` | Jeu de démonstration fictif (1.1) et jeu 1.0 du prototype (tests de compatibilité). |
 | `scripts/migrate_demo.py` | Régénère le jeu de démonstration 1.1 à partir du jeu 1.0. |
 
@@ -35,6 +60,7 @@ AUDIT_FILE=chemin/audit.json npm run build   # build avec un autre audit embarqu
 
 ## Limites connues (MVP-α)
 
-- Les surcharges et le feedback sont stockés dans le navigateur (localStorage). La persistance serveur est prévue en V2.
+- Les audits importés, les surcharges et le feedback sont stockés dans le navigateur (IndexedDB et localStorage). La persistance serveur est prévue en V2.
+- Le convertisseur de la grille Excel `230906_Scoring_Template.xlsx` vers `audit.json` (DAT-30) n'est pas encore développé.
 - L'export PPTX et l'export XLSX ne sont pas encore développés (prévus en V1).
 - Les logos des éditeurs ne sont pas embarqués : une pastille monogramme les remplace en attendant l'arbitrage sur les droits (§13.2).

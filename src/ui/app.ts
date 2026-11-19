@@ -3,7 +3,9 @@ import { CRITS, STATUTS } from '../core/rules.ts';
 import { clamp, clone, esc, store } from '../core/util.ts';
 import { getLang, setLang, t, tx, type Lang } from '../core/i18n.ts';
 import { emptyOverrides } from '../core/model.ts';
-import { validate, type Report } from '../core/validate.ts';
+import { validate } from '../core/validate.ts';
+import { IMP, importScreen, processFiles, refreshRecent, reportHtml } from './importer.ts';
+import { deleteAudit, getAudit, getCurrent, saveAudit, setCurrent, storeKey } from './storage.ts';
 import type { Audit } from '../core/types.ts';
 import { S, emptyFilters, rebuild } from './state.ts';
 import * as X from './sections.ts';
@@ -13,6 +15,8 @@ const $ = <T extends Element = HTMLElement>(s: string, r: ParentNode = document)
 const A = () => S.M.audit, R = () => S.M.audit.restitution!;
 const keyOv = () => 'aav:ov:' + S.RAW.id, keyFb = () => 'aav:fb:' + S.RAW.id;
 let PRISTINE = '';
+let DEMO: Audit;
+const DEMO_KEY = 'demo';
 
 function loadStores() {
   S.OV = Object.assign(emptyOverrides(), store.get(keyOv(), {}));
@@ -28,6 +32,7 @@ function renderTop() {
   $('#topbar').innerHTML = `<button class="tb-btn burger" data-act="burger" aria-label="Menu">☰</button><div class="brand">${X.LOGO}<span class="name">Audit Analytics Viewer</span><span class="client">· ${esc(A().client)}</span>${S.RAW.id.startsWith('AUD-DEMO') ? `<span class="demo-flag">DÉMO</span>` : ''}</div><span class="sp"></span>
   <button class="tb-btn" data-act="lang" aria-label="Langue / Language">${L === 'fr' ? 'FR · <span style="opacity:.6">EN</span>' : '<span style="opacity:.6">FR</span> · EN'}</button>
   <button class="tb-btn" data-act="report" title="${t('report')}">✓ <span class="lbl">${t('report')}</span>${nW ? ` <span class="badge">${nW}</span>` : ''}</button>
+  <button class="tb-btn" data-act="nav" data-to="import" title="Importer un audit">⇪ <span class="lbl">Importer</span></button>
   <button class="tb-btn" data-act="edit" aria-pressed="${S.edit}">✎ <span class="lbl">${t('edit')}</span></button>
   ${S.edit ? `<button class="tb-btn" data-act="params">⚙ <span class="lbl">${t('params')}</span></button>` : ''}
   <details class="menu"><summary class="tb-btn">⬇ <span class="lbl">${t('export')}</span></summary><div class="menu-pop">
@@ -35,7 +40,6 @@ function renderTop() {
     <button data-act="pdf">PDF 16:9<small>Impression du rendu présentation (navigateur)</small></button>
     <button data-act="csv-all">Plan d’action (CSV)<small>Grille complète + priorité, effort, feedback</small></button>
     <button data-act="json">audit.json édité<small>Contrat 1.1 + surcharges + feedback</small></button>
-    <button data-act="import">${t('import')} un audit.json<small>Validation §7.2 avant génération</small></button>
   </div></details>
   <button class="tb-btn primary" data-act="present">▶ <span class="lbl">${t('present')}</span></button>`;
 }
@@ -52,7 +56,7 @@ function renderFilters() {
 const curFiche = () => { const l = X.ficheList('web'); return S.M.cmap[S.fid!] ? S.fid : l[0] && l[0].id; };
 function renderSide() {
   const list = X.ficheList('web');
-  let h = '';
+  let h = `<button class="nav-item ${S.route === 'import' ? 'on' : ''}" data-act="nav" data-to="import"><span class="num">⇪</span>Importer un audit</button><hr style="border:0;border-top:1px solid var(--line);margin:8px 0">`;
   X.SECTIONS.forEach(s => {
     if (s === 'S1' && !X.s1On() && !S.edit) return;
     if (s === 'S0b' && R().sommaire?.actif === false && !S.edit) return;
@@ -76,6 +80,7 @@ function webSection(r: string): X.Sec | null {
   switch (r) {
     case 'S0': return X.S0('web'); case 'S0b': return X.S0b('web', undefined, slidePages()); case 'S1': return X.S1(); case 'S2': return X.S2('web');
     case 'S3': return X.S3('web'); case 'S4': return X.S4('web'); case 'S5': return X.S5('web', S.fid, S.ptab); case 'S6': return X.S6('web');
+    case 'import': return importScreen(DEMO_KEY, S.RAW === DEMO ? DEMO_KEY : getCurrent());
     case 'S7': return X.S7('web'); case 'S8': return X.S8('web'); case 'S9': return X.S9(); default: return X.S0('web');
   }
 }
@@ -99,7 +104,7 @@ export function render(keepScroll?: boolean) {
 /* ===================== Routage ===================== */
 function parseHash() {
   const h = decodeURIComponent(location.hash.slice(1)); const [r, id] = h.split('/');
-  S.route = X.SECTIONS.includes(r) || r === 'deck' ? r : 'S0'; S.fid = id || null; S.ptab = 0;
+  S.route = X.SECTIONS.includes(r) || r === 'deck' || (r === 'import' && !S.artefact) ? r : 'S0'; S.fid = id || null; S.ptab = 0;
 }
 function go(r: string) { if (location.hash === '#' + r) { parseHash(); render(); } else location.hash = r; $('#sidebar').classList.remove('open'); }
 
@@ -210,17 +215,34 @@ function modal(title: string, body: string, foot?: string, cls?: string) {
   o.addEventListener('click', e => { if (e.target === o) closeModal(); }); document.body.appendChild(o); o.querySelector<HTMLElement>('.x-btn')!.focus();
 }
 function closeModal() { $('#ovl')?.remove(); $('#drawer')?.remove(); }
-const repHtml = (r: Report) => `<div class="rep">${r.I.map(i => `<p>${esc(i)}</p>`).join('')}<h3 class="e">Erreurs bloquantes (${r.E.length})</h3>${r.E.length ? `<ul class="e">${r.E.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">Aucune.</p>'}<h3 class="w">Avertissements (${r.W.length})</h3>${r.W.length ? `<ul class="w">${r.W.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '<p class="muted">Aucun.</p>'}</div>`;
-let PENDING: Audit | null = null;
-function onFile(f: File) {
-  const rd = new FileReader();
-  rd.onload = () => {
-    let obj: any = null; try { obj = JSON.parse(String(rd.result)); } catch { /* invalide */ }
-    const r = obj ? validate(obj) : { E: ['JSON invalide : ' + f.name], W: [], I: [] };
-    PENDING = r.E.length ? null : obj;
-    modal(`${t('report')} – ${f.name}`, repHtml(r), `<button class="btn" data-act="close">Annuler</button><button class="btn solid" data-act="load" ${r.E.length ? 'disabled' : ''}>Générer la restitution</button>`);
-  };
-  rd.readAsText(f);
+/* ===================== Import & génération ===================== */
+async function handleFiles(files: File[]) {
+  if (!files.length || IMP.phase === 'busy') return;
+  if (S.route !== 'import') go('import');
+  IMP.phase = 'busy'; IMP.ack = false; IMP.step = 'Lecture des fichiers…'; renderMain(true);
+  const step = (m: string) => { IMP.step = m; const b = document.querySelector('#dz b'); if (b) b.textContent = m; };
+  try { IMP.result = await processFiles(files, step); }
+  catch (e: any) { IMP.result = { files: files.map(f => f.name), bundle: null, report: { E: [{ code: 'ZIP', objet: 'Import', message: String(e?.message || e) }], W: [], I: [], stats: null }, audit: null, optim: { n: 0, before: 0, after: 0 }, weight: 0 }; }
+  IMP.phase = 'report'; renderMain();
+}
+function loadAudit(a: Audit) {
+  S.RAW = a; S.REPORT = validate(a); loadStores();
+  S.filters = emptyFilters(); S.s3view = null; S.edit = false;
+}
+async function generate() {
+  const res = IMP.result; if (!res?.audit || res.report.E.length) return;
+  loadAudit(res.audit);
+  S.REPORT = res.report; // rapport complet de l'import (preuves, archive)
+  try { const rec = await saveAudit(res.audit, res.files.join(', ')); setCurrent(rec.key); }
+  catch { toast('Audit chargé, mais non conservé : stockage local indisponible ou plein.'); }
+  IMP.phase = 'idle'; IMP.result = null; await refreshRecent();
+  go('S0'); render();
+  toast(`Restitution générée : ${buildSlides().length} slides, ${S.M.constats.filter(c => c.visible).length} fiches`);
+}
+async function openStored(key: string) {
+  if (key === DEMO_KEY) { loadAudit(DEMO); setCurrent(null); go('S0'); render(); toast('Audit de démonstration chargé'); return; }
+  const a = await getAudit(key); if (!a) { toast('Audit introuvable dans ce navigateur'); return; }
+  loadAudit(a); setCurrent(key); go('S0'); render(); toast(`Audit ${a.client} chargé`);
 }
 const toLines = (arr: any[] | undefined) => (arr || []).map(x => (typeof x === 'object' && x && 'texte' in x ? tx(x.texte) : tx(x))).join('\n');
 function drawer() {
@@ -282,10 +304,14 @@ const ACT: Record<string, (el: HTMLElement, e: Event) => void> = {
   'csv-all': el => { (el.closest('details') as HTMLDetailsElement).open = false; download(`plan_action_${slug()}.csv`, csv(planRows(S.M.crits)), 'text/csv;charset=utf-8'); },
   'csv-s8': () => download(`grille_filtree_${slug()}.csv`, csv(planRows(X.s8Rows())), 'text/csv;charset=utf-8'),
   json: el => { (el.closest('details') as HTMLDetailsElement).open = false; download(`audit_${slug()}_edite.json`, JSON.stringify(editedAudit(), null, 2), 'application/json'); },
-  import: el => { (el.closest('details') as HTMLDetailsElement).open = false; const f = $<HTMLInputElement>('#file'); f.value = ''; f.click(); },
-  report: () => modal(t('report') + ' – audit chargé', repHtml(S.REPORT!)),
+  pick: () => { if (IMP.phase === 'busy') return; const f = $<HTMLInputElement>('#file'); f.value = ''; f.click(); },
+  'imp-reset': () => { IMP.phase = 'idle'; IMP.result = null; IMP.ack = false; renderMain(); },
+  'imp-generate': () => { generate(); },
+  'imp-open': el => { openStored(el.dataset.k!); },
+  'imp-del': async el => { await deleteAudit(el.dataset.k!); await refreshRecent(); renderMain(true); toast('Audit supprimé de ce navigateur'); },
+  'imp-template': () => download('audit_exemple.json', JSON.stringify(DEMO, null, 2), 'application/json'),
+  report: () => modal(t('report') + ' – ' + A().client, `<div class="imp-report">${reportHtml(S.REPORT!)}</div>`),
   close: () => closeModal(),
-  load: () => { if (!PENDING) return; S.RAW = PENDING; PENDING = null; S.REPORT = validate(S.RAW); loadStores(); closeModal(); S.filters = emptyFilters(); go('S0'); render(); toast('Audit chargé'); },
   'reset-filters': () => { S.filters = emptyFilters(); render(true); },
   s3view: el => { S.s3view = el.dataset.v!; renderMain(true); },
   sort: el => { const k = el.dataset.k!; if (S.s8.sort === k) S.s8.dir *= -1; else { S.s8.sort = k; S.s8.dir = 1; } $('#s8-table').innerHTML = X.s8Table(); },
@@ -315,6 +341,10 @@ function bind() {
     if (PRES && !el.closest('#pres')) return;
     const f = ACT[el.dataset.act!]; if (f) { if (el.tagName === 'BUTTON') e.preventDefault(); f(el, e); }
   });
+  const isFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  document.addEventListener('dragover', e => { if (S.artefact || !isFiles(e)) return; e.preventDefault(); $('#dz')?.classList.add('over'); });
+  document.addEventListener('dragleave', e => { if (!(e.relatedTarget as Node | null)) $('#dz')?.classList.remove('over'); });
+  document.addEventListener('drop', e => { if (S.artefact || !isFiles(e)) return; e.preventDefault(); $('#dz')?.classList.remove('over'); handleFiles([...e.dataTransfer!.files]); });
   document.addEventListener('keydown', e => {
     if (PRES) {
       if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); presGo(1); }
@@ -350,15 +380,23 @@ function bind() {
       const rd = new FileReader(); rd.onload = () => { (S.OV.audit as any)[ds.img!] = String(rd.result); saveOv(); log(`${ds.img} ajouté`); drawer(); render(true); }; rd.readAsDataURL(f);
     }
     else if (ds.param) { const [g, k] = ds.param.split('.'); const v = el.type === 'checkbox' ? el.checked : el.value; if (g === 'audit') (S.OV.audit as any)[k] = v; else setRestit(g === 'sommaire' ? 'sommaire.' + k : k, v); saveOv(); log(`Paramètre ${k} modifié`); if (k === 'jauges') S.s3view = null; rebuild(); renderTop(); renderFilters(); renderSide(); renderMain(true); }
-    else if (el.id === 'file' && el.files?.[0]) onFile(el.files[0]);
+    else if (el.id === 'file' && el.files?.length) handleFiles([...el.files]);
+    else if (ds.imp === 'ack') { IMP.ack = el.checked; renderMain(true); }
   });
 }
 
-export function start(raw: Audit) {
+export async function start(raw: Audit) {
   PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
   S.artefact = document.documentElement.dataset.artefact === '1';
   if (S.artefact) document.documentElement.classList.add('artefact');
-  S.RAW = raw;
-  setLang(store.get<Lang>('aav:lang', (raw.langue as Lang) || 'fr'));
-  loadStores(); S.REPORT = validate(raw); parseHash(); bind(); render();
+  DEMO = raw; S.RAW = raw;
+  if (!S.artefact) {
+    const key = getCurrent();
+    const stored = key ? await getAudit(key) : null;
+    if (stored) S.RAW = stored; else if (key) setCurrent(null);
+    await refreshRecent();
+  }
+  setLang(store.get<Lang>('aav:lang', (S.RAW.langue as Lang) || 'fr'));
+  loadStores(); S.REPORT = validate(S.RAW); parseHash(); bind(); render();
 }
+void storeKey;
