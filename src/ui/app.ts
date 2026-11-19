@@ -6,6 +6,10 @@ import { emptyOverrides } from '../core/model.ts';
 import { validate } from '../core/validate.ts';
 import { IMP, importScreen, processFiles, refreshRecent, reportHtml } from './importer.ts';
 import { deleteAudit, getAudit, getCurrent, saveAudit, setCurrent, storeKey } from './storage.ts';
+import { buildPlanXlsx, planXlsxFilename, XLSX_MIME } from '../export/xlsx.ts';
+import { compareAudits, findPrevious } from '../core/compare.ts';
+import { compareScreen } from './compare.ts';
+import '../styles/compare.css';
 import type { Audit } from '../core/types.ts';
 import { S, emptyFilters, rebuild } from './state.ts';
 import * as X from './sections.ts';
@@ -37,8 +41,10 @@ function renderTop() {
   ${S.edit ? `<button class="tb-btn" data-act="params">⚙ <span class="lbl">${t('params')}</span></button>` : ''}
   <details class="menu"><summary class="tb-btn">⬇ <span class="lbl">${t('export')}</span></summary><div class="menu-pop">
     <button data-act="artefact">${t('artefact')}<small>${t('artefact_d')}</small></button>
+    <button data-act="pptx">PowerPoint (.pptx)<small>Deck à la charte, textes et formes éditables</small></button>
+    <button data-act="xlsx-all">Plan d’action (XLSX)<small>Synthèse, plan d’action, grille détaillée, accès requis</small></button>
     <button data-act="pdf">PDF 16:9<small>Impression du rendu présentation (navigateur)</small></button>
-    <button data-act="csv-all">Plan d’action (CSV)<small>Grille complète + priorité, effort, feedback</small></button>
+    <button data-act="csv-all">Plan d’action (CSV)<small>Grille complète au format texte</small></button>
     <button data-act="json">audit.json édité<small>Contrat 1.1 + surcharges + feedback</small></button>
   </div></details>
   <button class="tb-btn primary" data-act="present">▶ <span class="lbl">${t('present')}</span></button>`;
@@ -68,7 +74,7 @@ function renderSide() {
       h += '</ul>';
     }
   });
-  h += `<hr style="border:0;border-top:1px solid var(--line);margin:10px 0"><button class="nav-item ${S.route === 'deck' ? 'on' : ''}" data-act="nav" data-to="deck"><span class="num">▤</span>${getLang() === 'fr' ? 'Aperçu du deck' : 'Deck preview'}</button>`;
+  h += `<hr style="border:0;border-top:1px solid var(--line);margin:10px 0"><button class="nav-item ${S.route === 'evolution' ? 'on' : ''}" data-act="nav" data-to="evolution"><span class="num">⇅</span>${getLang() === 'fr' ? 'Évolution' : 'Evolution'}${S.cmp.data ? ' <span class="badge-dot" aria-hidden="true"></span>' : ''}</button><button class="nav-item ${S.route === 'deck' ? 'on' : ''}" data-act="nav" data-to="deck"><span class="num">▤</span>${getLang() === 'fr' ? 'Aperçu du deck' : 'Deck preview'}</button>`;
   $('#sidebar').innerHTML = h;
 }
 function webPage(sec: X.Sec | null) {
@@ -80,6 +86,7 @@ function webSection(r: string): X.Sec | null {
   switch (r) {
     case 'S0': return X.S0('web'); case 'S0b': return X.S0b('web', undefined, slidePages()); case 'S1': return X.S1(); case 'S2': return X.S2('web');
     case 'S3': return X.S3('web'); case 'S4': return X.S4('web'); case 'S5': return X.S5('web', S.fid, S.ptab); case 'S6': return X.S6('web');
+    case 'evolution': return compareScreen(S.cmp.data, cmpChoices(), S.cmp.ref, { masquerScores: !!R().masquer_scores });
     case 'import': return importScreen(DEMO_KEY, S.RAW === DEMO ? DEMO_KEY : getCurrent());
     case 'S7': return X.S7('web'); case 'S8': return X.S8('web'); case 'S9': return X.S9(); default: return X.S0('web');
   }
@@ -104,7 +111,7 @@ export function render(keepScroll?: boolean) {
 /* ===================== Routage ===================== */
 function parseHash() {
   const h = decodeURIComponent(location.hash.slice(1)); const [r, id] = h.split('/');
-  S.route = X.SECTIONS.includes(r) || r === 'deck' || (r === 'import' && !S.artefact) ? r : 'S0'; S.fid = id || null; S.ptab = 0;
+  S.route = X.SECTIONS.includes(r) || r === 'deck' || (['import', 'evolution'].includes(r) && !S.artefact) ? r : 'S0'; S.fid = id || null; S.ptab = 0;
 }
 function go(r: string) { if (location.hash === '#' + r) { parseHash(); render(); } else location.hash = r; $('#sidebar').classList.remove('open'); }
 
@@ -176,8 +183,8 @@ function exportPdf() {
 }
 
 /* ===================== Exports ===================== */
-function download(name: string, content: string, type: string) {
-  const b = new Blob([content], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+function download(name: string, content: string | Uint8Array | Blob, type: string) {
+  const b = content instanceof Blob ? content : new Blob([content as BlobPart], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
 }
 const slug = () => String(A().client).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-');
 const csv = (rows: unknown[][]) => '﻿' + rows.map(r => r.map(v => { const s = String(v ?? ''); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(';')).join('\r\n');
@@ -228,6 +235,22 @@ async function handleFiles(files: File[]) {
 function loadAudit(a: Audit) {
   S.RAW = a; S.REPORT = validate(a); loadStores();
   S.filters = emptyFilters(); S.s3view = null; S.edit = false;
+  S.cmp = { ref: null, data: null };
+  updateComparison().then(() => { if (S.cmp.data) render(true); });
+}
+/* ===================== Évolution (comparaison avec l'audit de référence) ===================== */
+const curKey = () => (S.RAW === DEMO ? DEMO_KEY : storeKey(S.RAW));
+function cmpChoices() {
+  return IMP.recent.filter(r => r.key !== curKey()).map(r => ({ key: r.key, label: `${r.client} · ${r.titre || r.id} · ${r.date || ''} · v${r.key.split('@')[1] || '1'}` }));
+}
+async function updateComparison(ref?: string | null) {
+  if (S.artefact) return;
+  const cands = IMP.recent.filter(r => r.key !== curKey()).map(r => ({ key: r.key, id: r.id, client: r.client, date: r.date, version: r.key.split('@')[1] }));
+  const key = ref !== undefined ? ref : findPrevious(S.RAW, cands);
+  S.cmp.ref = key || null; S.cmp.data = null;
+  if (!key) return;
+  const prev = await getAudit(key);
+  if (prev) { try { S.cmp.data = compareAudits(prev, S.RAW); } catch (e) { console.error(e); } }
 }
 async function generate() {
   const res = IMP.result; if (!res?.audit || res.report.E.length) return;
@@ -236,6 +259,7 @@ async function generate() {
   try { const rec = await saveAudit(res.audit, res.files.join(', ')); setCurrent(rec.key); }
   catch { toast('Audit chargé, mais non conservé : stockage local indisponible ou plein.'); }
   IMP.phase = 'idle'; IMP.result = null; await refreshRecent();
+  await updateComparison();
   go('S0'); render();
   toast(`Restitution générée : ${buildSlides().length} slides, ${S.M.constats.filter(c => c.visible).length} fiches`);
 }
@@ -302,6 +326,25 @@ const ACT: Record<string, (el: HTMLElement, e: Event) => void> = {
   pdf2: () => exportPdf(),
   artefact: el => { (el.closest('details') as HTMLDetailsElement).open = false; exportArtefact(); },
   'csv-all': el => { (el.closest('details') as HTMLDetailsElement).open = false; download(`plan_action_${slug()}.csv`, csv(planRows(S.M.crits)), 'text/csv;charset=utf-8'); },
+  pptx: async el => {
+    (el.closest('details') as HTMLDetailsElement).open = false;
+    toast('Génération du PowerPoint…');
+    try {
+      const { buildPptx, deckPlan, pptxFileName } = await import('../export/pptx.ts');
+      const warnings: string[] = [];
+      const blob = await buildPptx(S.M, { lang: getLang(), slides: deckPlan(S.M), warnings });
+      download(pptxFileName(S.M), blob, blob.type);
+      if (warnings.length) modal('Export PowerPoint : points d’attention', `<ul class="warns">${warnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul><p class="note">Le fichier a été généré ; ces éléments sont à vérifier dans PowerPoint.</p>`);
+      else toast('PowerPoint généré');
+    } catch (e: any) { console.error(e); modal('Export PowerPoint impossible', `<p>${esc(e?.message || e)}</p>`); }
+  },
+  'xlsx-all': el => { (el.closest('details') as HTMLDetailsElement).open = false; download(planXlsxFilename(S.M), buildPlanXlsx(S.M, S.FB, { lang: getLang() }), XLSX_MIME); },
+  'xlsx-s8': () => {
+    const f: Record<string, string> = {};
+    if (S.s8.q) f['Recherche'] = S.s8.q; if (S.s8.axe) f['Axe'] = t(S.s8.axe); if (S.s8.top) f['Top prio'] = 'oui';
+    Object.entries(S.filters).forEach(([k, v]) => { if (v) f[t(k)] = k === 'pilier' ? tx(S.M.pmap[v]?.libelle) : t(v); });
+    download(planXlsxFilename(S.M, true), buildPlanXlsx(S.M, S.FB, { lang: getLang(), criteres: X.s8Rows(), filtres: f }), XLSX_MIME);
+  },
   'csv-s8': () => download(`grille_filtree_${slug()}.csv`, csv(planRows(X.s8Rows())), 'text/csv;charset=utf-8'),
   json: el => { (el.closest('details') as HTMLDetailsElement).open = false; download(`audit_${slug()}_edite.json`, JSON.stringify(editedAudit(), null, 2), 'application/json'); },
   pick: () => { if (IMP.phase === 'busy') return; const f = $<HTMLInputElement>('#file'); f.value = ''; f.click(); },
@@ -381,6 +424,7 @@ function bind() {
     }
     else if (ds.param) { const [g, k] = ds.param.split('.'); const v = el.type === 'checkbox' ? el.checked : el.value; if (g === 'audit') (S.OV.audit as any)[k] = v; else setRestit(g === 'sommaire' ? 'sommaire.' + k : k, v); saveOv(); log(`Paramètre ${k} modifié`); if (k === 'jauges') S.s3view = null; rebuild(); renderTop(); renderFilters(); renderSide(); renderMain(true); }
     else if (el.id === 'file' && el.files?.length) handleFiles([...el.files]);
+    else if (ds.cmp === 'ref') { updateComparison(el.value || null).then(() => render(true)); }
     else if (ds.imp === 'ack') { IMP.ack = el.checked; renderMain(true); }
   });
 }
@@ -398,5 +442,6 @@ export async function start(raw: Audit) {
   }
   setLang(store.get<Lang>('aav:lang', (S.RAW.langue as Lang) || 'fr'));
   loadStores(); S.REPORT = validate(S.RAW); parseHash(); bind(); render();
+  updateComparison().then(() => { if (S.cmp.data) render(true); });
 }
 void storeKey;

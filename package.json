@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "perf": "node --experimental-strip-types --test tests/perf.test.ts",
+    "perf:jeu": "node --experimental-strip-types scripts/make-perf-audit.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",

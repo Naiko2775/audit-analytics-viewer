@@ -4,6 +4,7 @@ import { esc } from '../core/util.ts';
 import { bullets, fmtMonth, getLang, md, t, tx } from '../core/i18n.ts';
 import type { Outil, Puce } from '../core/types.ts';
 import { proofView } from './proof.ts';
+import { scoreDeltaBadge } from './compare.ts';
 import { S } from './state.ts';
 
 export type Mode = 'web' | 'slide';
@@ -133,7 +134,9 @@ export function S3(mode: Mode): Sec {
   const view = S.s3view || r.jauges || 'pilier', SC = S.M.scores;
   const sec = view === 'axe' ? AXES.map(a => gauge(SC.axes[a], t(a))) : S.M.piliers.map(p => gauge(SC.pil[p.id], tx(p.libelle)));
   const seg = mode === 'web' ? `<div class="seg" role="group"><button data-act="s3view" data-v="pilier" aria-pressed="${view === 'pilier'}">${t('by_pilier')}</button><button data-act="s3view" data-v="axe" aria-pressed="${view === 'axe'}">${t('by_axe')}</button></div>` : '';
-  return { sur: t('S3'), titre: `${t('score_global')} : ${SC.global ?? '–'} / 100`, body: `<div class="scorewrap"><div class="gmain">${gauge(SC.global, t('score_global'))}<div style="margin-top:14px">${coverage()}</div></div><div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 class="h" style="margin:0">${view === 'axe' ? t('by_axe') : t('by_pilier')}</h2>${seg}</div><div class="gauges2">${sec.join('')}</div></div></div><div class="grid2" style="margin-top:20px"><div><h2 class="h">${t('cross')}</h2>${crossTable()}</div><div><h2 class="h">${t('top5')}</h2>${top5(mode)}</div></div>${mode === 'web' ? `<p class="note">${t('scores_note')}</p>` : ''}` };
+  const cmp = mode === 'web' ? S.cmp.data : null;
+  const delta = cmp ? ` ${scoreDeltaBadge(cmp.scores.global.delta, ` vs ${esc(cmp.prev.date || cmp.prev.id)}`)}` : '';
+  return { sur: t('S3'), titre: `${t('score_global')} : ${SC.global ?? '–'} / 100${delta}`, body: `<div class="scorewrap"><div class="gmain">${gauge(SC.global, t('score_global'))}<div style="margin-top:14px">${coverage()}</div></div><div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h2 class="h" style="margin:0">${view === 'axe' ? t('by_axe') : t('by_pilier')}</h2>${seg}</div><div class="gauges2">${sec.join('')}</div></div></div><div class="grid2" style="margin-top:20px"><div><h2 class="h">${t('cross')}</h2>${crossTable()}</div><div><h2 class="h">${t('top5')}</h2>${top5(mode)}</div></div>${mode === 'web' ? `<p class="note">${t('scores_note')}</p>` : ''}` };
 }
 
 /* ---------- S4 Aperçu priorisé ---------- */
@@ -243,7 +246,7 @@ export function s8Table() {
 export function S8(mode: Mode): Sec | null {
   if (mode !== 'web') return null;
   const s = S.s8;
-  const bar = `<div class="s8bar"><input type="search" data-s8="q" value="${esc(s.q)}" placeholder="${t('search')}" aria-label="${t('search')}"><label>${t('axe')} <select data-s8="axe"><option value="">${t('all')}</option>${AXES.map(a => `<option value="${a}" ${s.axe === a ? 'selected' : ''}>${t(a)}</option>`).join('')}</select></label><label class="chk" style="margin:0"><input type="checkbox" data-s8="top" ${s.top ? 'checked' : ''}> ${t('top_prio')} ★</label><span style="flex:1"></span><button class="btn" data-act="csv-s8">⬇ ${t('export_filtered')}</button></div>`;
+  const bar = `<div class="s8bar"><input type="search" data-s8="q" value="${esc(s.q)}" placeholder="${t('search')}" aria-label="${t('search')}"><label>${t('axe')} <select data-s8="axe"><option value="">${t('all')}</option>${AXES.map(a => `<option value="${a}" ${s.axe === a ? 'selected' : ''}>${t(a)}</option>`).join('')}</select></label><label class="chk" style="margin:0"><input type="checkbox" data-s8="top" ${s.top ? 'checked' : ''}> ${t('top_prio')} ★</label><span style="flex:1"></span><button class="btn" data-act="csv-s8">⬇ CSV</button> <button class="btn" data-act="xlsx-s8">⬇ XLSX</button></div>`;
   return { sur: t('S8'), titre: `${S.M.crits.length} ${t('rows')}`, body: bar + `<div id="s8-table">${s8Table()}</div>` };
 }
 

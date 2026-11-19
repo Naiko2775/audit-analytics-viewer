@@ -6,6 +6,7 @@ import { clone, esc } from '../core/util.ts';
 import { tx } from '../core/i18n.ts';
 import type { Audit } from '../core/types.ts';
 import { listAudits, type Stored } from './storage.ts';
+import { convertGrid } from '../core/grid.ts';
 
 export const BUDGET = 12 * 1024 * 1024, MAX_W = 1920, MAX_PROOF = 400 * 1024;
 export interface ImportResult {
@@ -90,6 +91,17 @@ async function embed(src: Audit, bundle: Bundle, onStep: (s: string) => void) {
 export async function processFiles(files: File[], onStep: (s: string) => void): Promise<ImportResult> {
   const names = files.map(f => f.name);
   const empty = (issue: Issue): ImportResult => ({ files: names, bundle: null, report: { E: [issue], W: [], I: [], stats: null }, audit: null, optim: { n: 0, before: 0, after: 0 }, weight: 0 });
+  // Grille de scoring Excel (230906_Scoring_Template) → audit.json (DAT-30)
+  const grid = files.find(f => /\.xlsx$/i.test(f.name));
+  if (grid) {
+    onStep(`Conversion de la grille ${grid.name}…`);
+    const g = convertGrid(new Uint8Array(await grid.arrayBuffer()));
+    if (!g.audit) return { ...empty(g.report.E[0] || { code: 'GRILLE_FICHIER', objet: grid.name, message: 'Grille illisible.' }), report: { E: g.report.E.length ? g.report.E : [{ code: 'GRILLE_FICHIER', objet: grid.name, message: 'Grille illisible.' }], W: g.report.W, I: g.report.I, stats: null } };
+    const report = validate(g.audit);
+    report.E.push(...g.report.E); report.W.push(...g.report.W); report.I.push(...g.report.I);
+    report.I.unshift({ code: 'GRILLE_RESUME', objet: grid.name, message: 'Audit construit depuis la grille Excel : constats brouillons à relire, cadrage et preuves à compléter.' });
+    return { files: names, bundle: null, report, audit: g.audit, optim: { n: 0, before: 0, after: 0 }, weight: JSON.stringify(g.audit).length };
+  }
   let entries;
   try { entries = await readEntries(files, onStep); } catch (e: any) { return empty({ code: 'ZIP', objet: 'Archive', message: e.message }); }
   const bundle = bundleFrom(entries);
@@ -124,7 +136,7 @@ function issueList(list: Issue[], lv: string, open: boolean) {
   const groups: Record<string, Issue[]> = {};
   list.forEach(i => (groups[i.code] = groups[i.code] || []).push(i));
   return `<details class="ir ir-${LV[lv][1]}" ${open ? 'open' : ''}><summary><b>${LV[lv][0]}</b> <span class="cnt">${list.length}</span></summary>${Object.entries(groups).map(([code, items]) =>
-    `<div class="ir-g"><div class="ir-rule"><code>${esc(code)}</code> ${esc(RULES[code] || code)} <span class="muted">· ${items.length}</span></div><ul>${items.map(i => `<li><span class="ir-obj">${esc(i.objet)}</span> ${esc(i.message)}</li>`).join('')}</ul></div>`).join('')}</details>`;
+    `<div class="ir-g"><div class="ir-rule"><code>${esc(code)}</code> ${esc(RULES[code] || (code.startsWith('GRILLE_') ? 'Conversion de la grille Excel' : code))} <span class="muted">· ${items.length}</span></div><ul>${items.map(i => `<li><span class="ir-obj">${esc(i.objet)}</span> ${esc(i.message)}</li>`).join('')}</ul></div>`).join('')}</details>`;
 }
 export function reportHtml(r: Report) {
   return issueList(r.E, 'E', true) + issueList(r.W, 'W', r.E.length === 0) + issueList(r.I, 'I', false);
@@ -149,7 +161,7 @@ export function importScreen(demoKey: string, currentKey: string | null) {
       ${IMP.phase === 'busy' ? `<div class="spin" aria-hidden="true"></div><b>${esc(IMP.step || 'Traitement…')}</b>` :
       `<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <b>Déposez les fichiers de l'audit ici</b><span>ou <u>parcourez votre poste</u></span>
-      <small>Archive <code>.zip</code> produite par le skill (audit.json + dossier <code>preuves/</code>), ou <code>audit.json</code> seul, ou le JSON avec ses captures (sélection multiple).</small>`}
+      <small>Archive <code>.zip</code> produite par le skill (audit.json + dossier <code>preuves/</code>), ou <code>audit.json</code> seul, ou le JSON avec ses captures (sélection multiple), ou la grille Excel <code>.xlsx</code> de scoring.</small>`}
     </div>`;
   let body = '';
   if (IMP.phase === 'report' && res) {

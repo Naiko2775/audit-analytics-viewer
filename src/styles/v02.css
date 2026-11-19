@@ -153,3 +153,5 @@ table.acc td .tool{border:0;padding:0}
 .imp-recent tr.cur td{background:var(--soft)}
 @media (max-width:900px){.imp-sum{grid-template-columns:1fr 1fr}.imp-id{grid-column:1/-1}}
 .artefact [data-to="import"]{display:none!important}
+
+.badge-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--red);margin-left:6px;vertical-align:middle}

@@ -68,9 +68,17 @@ Tout le traitement se fait dans le navigateur : rien n'est envoyé sur un serveu
 - S2 : logos des solutions par pilier ; tableau des accès requis, alimenté par `acces_requis` et par les critères `INCONNU` dont le motif est `acces`.
 - S5 : gabarit navigateur avec panneau DevTools (Network / Console) et repères OK / KO / Partiel / Info, en plusieurs étapes. Les repères sont des données : ils restent modifiables et traduisibles.
 
+## Exports et modules V1
+
+- **PowerPoint (.pptx)** (`src/export/pptx.ts`, chargé à la demande) : deck à la charte JAKALA dans le même ordre que l'aperçu (couverture, sommaire, transitions en option, S1 à S9, une slide par fiche). Textes, tableaux, Gantt, matrice et repères de preuve sont des éléments natifs, donc modifiables. Les alertes de mise en page sont affichées après l'export.
+- **Plan d'action (XLSX)** (`src/export/xlsx.ts`, écrivain OOXML sans dépendance) : feuilles Synthèse, Plan d'action, Grille détaillée (colonnes de la grille 230906 + priorité, effort, feedback, statut de correction) et Accès requis. Depuis S8, l'export filtré ajoute une feuille « Filtres appliqués ».
+- **Import de la grille Excel** (`src/core/grid.ts`, `src/core/xlsx-read.ts`) : déposer `230906_Scoring_Template.xlsx` sur l'écran d'import pour obtenir un `audit.json` 1.1 avec des constats brouillons à relire. Le convertisseur a été écrit **d'après la spec §2.1**, sans le vrai fichier : il est à valider sur la vraie grille.
+- **Évolution** (`src/core/compare.ts`, `src/ui/compare.ts`) : comparaison avec l'audit de référence (`audit_precedent_id`, sinon le précédent du même client). Elle montre l'écart de score global, par pilier et par axe, les critères améliorés ou dégradés et les constats résolus, persistants ou régressés. Badge d'évolution en S3.
+- **Performance** (`src/data/perf.ts`, `npm run perf`) : jeu de 150 critères, 30 constats et 60 preuves ; `parseJson`, `validate` et `buildModel` en quelques millisecondes.
+
 ## Limites connues (MVP-α)
 
 - Les audits importés, les surcharges et le feedback sont stockés dans le navigateur (IndexedDB et localStorage). La persistance serveur est prévue en V2.
-- Le convertisseur de la grille Excel `230906_Scoring_Template.xlsx` vers `audit.json` (DAT-30) n'est pas encore développé.
-- L'export PPTX et l'export XLSX ne sont pas encore développés (prévus en V1).
+- Le PPTX et le XLSX n'ont pas été recettés dans PowerPoint ni dans Excel (A3, EXP-23) : ils ont seulement été vérifiés par analyse XML et par aperçu Quick Look. Il n'y a pas de master PPTX officiel (Q2), et le double hexagone S4 (Q6) n'est pas fait.
+- Le lien partageable sécurisé et le feedback client persistant (V2) sont reportés.
 - Les logos des éditeurs ne sont pas embarqués : une pastille monogramme les remplace en attendant l'arbitrage sur les droits (§13.2).

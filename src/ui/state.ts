@@ -11,6 +11,7 @@ export const S = {
   M: null as unknown as Model,
   REPORT: null as Report | null,
   artefact: false,
+  cmp: { ref: null as string | null, data: null as import('../core/compare.ts').Comparison | null },
   route: 'S0', fid: null as string | null, ptab: 0, edit: false,
   filters: emptyFilters(), s3view: null as string | null,
   s8: { axe: '', top: false, q: '', sort: 'id_grille', dir: 1 },
