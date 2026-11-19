@@ -40,6 +40,16 @@ La génération reste désactivée tant qu'il y a des erreurs bloquantes. S'il n
 
 Tout le traitement se fait dans le navigateur : rien n'est envoyé sur un serveur. Les audits importés sont conservés dans IndexedDB et listés sur l'écran d'import, et le dernier ouvert est rechargé au démarrage.
 
+## Tests
+
+- `npm test` lance les tests unitaires du moteur et de l'import (Node, sans navigateur).
+- `tests/e2e/import.e2e.mjs` est le test de bout en bout du parcours d'import, dans Chrome headless piloté par le protocole DevTools : JSON invalide, ZIP avec preuves manquantes et entrées dangereuses, confirmation des avertissements, génération, persistance après rechargement.
+  ```bash
+  npm run build && python3 -m http.server 4173 --bind 127.0.0.1 --directory dist &
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/aav-e2e about:blank &
+  node tests/e2e/import.e2e.mjs 9333 /tmp/aav-e2e <archive.zip> <json_casse.json>
+  ```
+
 ## Structure
 
 | Dossier | Rôle |
